@@ -125,11 +125,24 @@ void dwlbg_output_config_destroy(struct dwlbg_output_config * opc) {
 //
 
 bool configure_global(
-		struct dwlbg_state * dwlbg __attribute__((unused)),
+		struct dwlbg_state * dwlbg,
 		char * name __attribute__((unused)),
-		char * property __attribute__((unused)),
-		char * value __attribute__((unused))) {
-	fprintf(stderr, "Not in an output section\n");
+		char * property,
+		char * value) {
+	if (strcmp(property, "cache-mb") == 0) {
+		char * end = NULL;
+		errno = 0;
+		unsigned long mb = strtoul(value, &end, 10);
+		if (errno != 0 || end == value || *end != '\0') {
+			fprintf(stderr, "Invalid cache size: '%s'\n", value);
+			return false;
+		}
+
+		dwlbg->cache_budget_bytes = mb * 1024UL * 1024UL;
+		return true;
+	}
+
+	fprintf(stderr, "Invalid global property: '%s'\n", property);
 	return false;
 }
 

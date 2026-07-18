@@ -24,6 +24,8 @@ struct dwlbg_animation {
 	GdkPixbufAnimationIter * frame_iter;
 	cairo_surface_t * source_surface;
 
+	bool static_image;
+	bool cache_failed;
 	bool first_cycle;
 	unsigned int frame_count;
 

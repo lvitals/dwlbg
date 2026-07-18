@@ -1,3 +1,5 @@
+cache-mb=64
+
 [output *]
 image=$XDG_CONFIG_HOME/dwlbg/wallpaper.gif
 filter=best

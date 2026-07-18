@@ -270,6 +270,7 @@ static const char usage[] =
 
 int main(int argc, char * argv[]) {
 	struct dwlbg_state dwlbg = {0};
+	dwlbg.cache_budget_bytes = DWLBG_DEFAULT_CACHE_BUDGET_MB * 1024UL * 1024UL;
 	wl_list_init(&dwlbg.output_configs);
 	wl_list_init(&dwlbg.idle_outputs);
 	wl_list_init(&dwlbg.animations);

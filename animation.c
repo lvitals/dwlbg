@@ -9,6 +9,66 @@
 #include "output.h"
 #include "animation.h"
 
+#define DWLBG_ANIMATION_MIN_BUFFERS 2
+#define DWLBG_STATIC_MIN_BUFFERS 1
+
+static size_t cache_budget_bytes(struct dwlbg_animation * anim) {
+	const char * env = getenv("DWLBG_CACHE_MB");
+	char * end = NULL;
+
+	if (env && *env) {
+		errno = 0;
+		unsigned long value = strtoul(env, &end, 10);
+		if (errno == 0 && end != env && *end == '\0') {
+			return value * 1024UL * 1024UL;
+		}
+	}
+
+	return anim->dwlbg->cache_budget_bytes;
+}
+
+static size_t output_buffer_size(struct dwlbg_output * output) {
+	if (!output->width || !output->height || output->scale <= 0) {
+		return 0;
+	}
+
+	uint32_t stride = cairo_format_stride_for_width(
+			CAIRO_FMT,
+			output->width * output->scale);
+	return (size_t)stride * output->height * output->scale;
+}
+
+static bool animation_cache_fits(struct dwlbg_animation * anim) {
+	size_t budget = cache_budget_bytes(anim);
+	size_t total = 0;
+	struct dwlbg_output * output;
+
+	if (!budget || anim->static_image || anim->cache_failed
+			|| anim->first_cycle) {
+		return false;
+	}
+
+	wl_list_for_each(output, &anim->outputs, link) {
+		size_t size = output_buffer_size(output);
+		if (!size || anim->frame_count > budget / size) {
+			return false;
+		}
+
+		total += size * anim->frame_count;
+		if (total > budget) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+static unsigned int minimum_buffer_count(struct dwlbg_animation * anim) {
+	return anim->static_image
+		? DWLBG_STATIC_MIN_BUFFERS
+		: DWLBG_ANIMATION_MIN_BUFFERS;
+}
+
 static bool set_timer_milliseconds(int timer_fd, unsigned int delay) {
 	struct itimerspec spec = {
 		.it_value = (struct timespec) {
@@ -148,27 +208,40 @@ int dwlbg_render_frame(struct dwlbg_animation * anim) {
 		anim->first_cycle = false;
 	}
 
+	bool cache_full_frames = animation_cache_fits(anim);
+	unsigned int min_buffers = minimum_buffer_count(anim);
+
 	struct dwlbg_output * output;
 	wl_list_for_each(output, &anim->outputs, link) {
-		struct dwlbg_buffer * buffer = dwlbg_next_buffer(output);
+		unsigned int target_buffers = cache_full_frames
+			? anim->frame_count
+			: min_buffers;
 
-		if (output->cached_frames < anim->frame_count) {
-			if (!anim->first_cycle) {
-				// When we're past the first cycle, we want to have as many
-				// buffers as the animation has frames, because then we can
-				// keep each resized frame in a buffer instead of re-scaling it
-				// each time. However, we don't know which frame we started on,
-				// so just attempt to resize every frame until we've cached
-				// them all.
-				if (!dwlbg_allocate_buffers(output, anim->frame_count)) {
-					// TODO: This will freeze us at the current frame, probably
-					// should quit instead.
-					fprintf(stderr, "Unable to allocate %d frame buffers\n",
-							anim->frame_count);
-					return -1;
-				}
+		if (output->buffer_count != target_buffers
+				&& !dwlbg_allocate_buffers(output, target_buffers)) {
+			if (cache_full_frames) {
+				fprintf(stderr,
+						"Unable to allocate %d frame buffers, disabling cache\n",
+						anim->frame_count);
+				cache_full_frames = false;
+				anim->cache_failed = true;
+				output->cached_frames = 0;
+				target_buffers = min_buffers;
 			}
+			if (output->buffer_count != target_buffers
+					&& !dwlbg_allocate_buffers(output, target_buffers)) {
+				fprintf(stderr, "Unable to allocate %d frame buffers\n",
+						target_buffers);
+				return -1;
+			}
+		}
 
+		struct dwlbg_buffer * buffer = dwlbg_next_buffer(output);
+		bool render_frame = anim->static_image
+			? output->cached_frames == 0
+			: !cache_full_frames || output->cached_frames < anim->frame_count;
+
+		if (render_frame) {
 			// Draw the frame into our source surface, at its native size.
 			dwlbg_cairo_surface_paint_pixbuf(anim->source_surface, image);
 
@@ -177,13 +250,19 @@ int dwlbg_render_frame(struct dwlbg_animation * anim) {
 
 			wl_surface_set_buffer_scale(output->surface, output->scale);
 
-			if (!anim->first_cycle) {
+			if (anim->static_image) {
+				output->cached_frames = 1;
+			}
+			else if (cache_full_frames) {
 				// We count the number of frames we've cached to know when
 				// we've cached them all, even if we didn't start at the first
 				// frame of the animation. On the first cycle, however, we
 				// don't want to cache because we don't know how many there
 				// will be (or if the animation is even finite, technically).
 				++output->cached_frames;
+			}
+			else {
+				output->cached_frames = 0;
 			}
 		}
 
@@ -264,14 +343,16 @@ struct dwlbg_animation * dwlbg_animation_create(
 		return NULL;
 	}
 
+	anim->static_image = gdk_pixbuf_animation_is_static_image(image);
+
 	// There's no way to directly ask for the number of frames in an animation,
 	// because gdk-pixbuf is designed to work with possibly streaming sources.
 	// However, when loading from a file, the final frame is always marked as
 	// the "loading frame". We use this, in combination with the following
 	// flag, to count the frames ourselves. Once we know how many there are, we
-	// can start caching the scaled buffers instead of rescaling each time we
-	// draw. We have to track the total length so we don't allocate an infinite
-	// number of buffers.
+	// can cache scaled buffers when they fit within the configured memory
+	// budget. We have to track the total length so we don't allocate an
+	// infinite number of buffers.
 	anim->first_cycle = true;
 
 	// The first frame drawn does not advance, so we can't count it. Instead,

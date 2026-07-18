@@ -20,6 +20,8 @@
 
 The configuration file is ini-style. Here's an example:
 
+	cache-mb=0
+
 	[output LVDS-1]
 	image=$XDG_CONFIG_HOME/wallpaper
 	filter=nearest
@@ -34,6 +36,12 @@ always in sync.
 The output name `*` will match any output not specified elsewhere in the file.
 For dwl, output names are provided through xdg-output. You can inspect them
 with tools such as `wlr-randr`.
+
+### Global options
+
+- `cache-mb`: Maximum memory, in MiB, to use for full-frame animation caching.
+	Use `cache-mb=0` for the lowest memory mode. The default is 64. The
+	`DWLBG_CACHE_MB` environment variable overrides this value.
 
 ### Output options
 
@@ -73,10 +81,17 @@ The bundled `wlr-layer-shell-unstable-v1.xml` is copied from this repository's
 
 CPU consumption will vary depending on the framerate of the chosen image, as
 dwlbg must wake up for every frame. However, with a reasonable (but still
-visually interesting) image, I have seen it idling as low as 0.3%. It will be
-noticably higher immediately after startup (or after reconfiguration), until it
-can cache all of the scaled frames per output.
+visually interesting) image, I have seen it idling as low as 0.3%.
 
-Memory consumption is a factor of the number of frames in each configured
-image, the number of outputs displaying each image, and the resolution of each
-display. It will remain constant once frames are cached.
+Static wallpapers keep one scaled buffer per output. Animated wallpapers keep
+two scaled buffers per output while they are drawing. Once dwlbg knows the
+number of frames in an animation, it will cache all scaled frames only if the
+estimated cache size fits under `cache-mb`, which defaults to 64 MiB. Set
+`cache-mb=0` to disable full-frame caching entirely, or increase it to trade
+memory for lower CPU usage on animations. The `DWLBG_CACHE_MB` environment
+variable overrides the configured value.
+
+With `cache-mb=0`, animated wallpapers still need the normal Wayland SHM
+buffers for the active output. For example, a 3840x2160 output needs about
+31.6 MiB per ARGB buffer, so double buffering alone is about 63.3 MiB before
+counting the decoded source image, Cairo/GdkPixbuf state, and shared libraries.

@@ -34,11 +34,8 @@ static void dwlbg_recreate_buffers(struct dwlbg_output * output) {
 	}
 	wl_list_init(&output->buffer_ring);
 
-	// If this is the first time we're being configured, we will have zero
-	// buffers. We always want to have at least two. If it isn't the first
-	// time, we need to reallocate as many as we already had because the
-	// animation loop won't do it for us if it has already finished the first
-	// cycle.
+	// Keep the existing ring size across output changes. New outputs start with
+	// two buffers; static wallpapers are shrunk to one by the render path.
 
 	unsigned int count = (output->buffer_count) ? output->buffer_count : 2;
 	output->buffer_count = 0;

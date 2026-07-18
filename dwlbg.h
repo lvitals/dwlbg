@@ -2,6 +2,7 @@
 #define DWLBG_H
 
 #include <poll.h>
+#include <stddef.h>
 #include <sys/un.h>
 #include <stdbool.h>
 #include <wayland-client.h>
@@ -9,6 +10,7 @@
 // Maximum number of events we can keep track of, including both the reserved
 // slots below and any active animations.
 #define DWLBG_EVENT_COUNT 25
+#define DWLBG_DEFAULT_CACHE_BUDGET_MB 64
 
 // These are used to reserve a few pollfd slots for static stuff.
 enum dwlbg_events {
@@ -22,6 +24,7 @@ enum dwlbg_events {
 struct dwlbg_state {
 	bool run;
 	struct pollfd events[DWLBG_EVENT_COUNT];
+	size_t cache_budget_bytes;
 
 	struct wl_display * display;
 	struct wl_registry * registry;
