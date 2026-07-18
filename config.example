@@ -1,0 +1,16 @@
+[output *]
+image=$XDG_CONFIG_HOME/dwlbg/wallpaper.gif
+filter=best
+scaling-mode=fill
+anchor=center
+
+# Example per-monitor overrides:
+#
+# [output HDMI-A-1]
+# image=$XDG_CONFIG_HOME/dwlbg/hdmi-wallpaper.png
+# scaling-mode=stretch
+#
+# [output eDP-1]
+# image=$XDG_CONFIG_HOME/dwlbg/laptop-wallpaper.jpg
+# scaling-mode=fill
+# anchor=center
